@@ -1,6 +1,6 @@
 Script to fetch content from an are.na channel and display it as a modal gallery. Push new content to are.na from a mobile device, instantly refreshes where script is used. Built as a simple RSS style image feed for https://ethan-rubens.com/ 
 
- <!-- Usage:
+Setup:
              1. Set ARENA_CHANNEL to your channel slug (line ~120)
              2. Add <a href="#" id="now-trigger">Now</a> anywhere in your page
              3. Drop this <style> block and the HTML + <script> below
