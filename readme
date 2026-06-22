@@ -1,4 +1,4 @@
-Script to fetch content from an are.na channel and display it as a modal gallery. Push new content to are.na from a mobile device, instantly refreshes where script is used. Built as a simple RSS style image feed for https://ethan-rubens.com/ 
+Script to fetch content from an are.na channel and display it as a modal gallery. Push content to are.na from a mobile device, automatically fetches latest content when modal is clicked. Built as a simple RSS style image feed for https://ethan-rubens.com/ 
 
 Setup:
              1. Set ARENA_CHANNEL to your channel slug (line ~120)
