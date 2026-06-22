@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>arena-now</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap" rel="stylesheet">
+    <style>
+
+        /* ─── arena-now ────────────────────────────────────────────────
+           A lightweight modal that pulls images from a public Are.na
+           channel and displays them with title, caption, and date.
+
+           Usage:
+             1. Set ARENA_CHANNEL to your channel slug (line ~120)
+             2. Add <a href="#" id="now-trigger">Now</a> anywhere in your page
+             3. Drop this <style> block and the HTML + <script> below
+                into your project
+
+           Swipe left/right  →  navigate images
+           Tap/click outside frame →  close
+           Arrow keys        →  navigate (desktop)
+           Escape            →  close (desktop)
+        ─────────────────────────────────────────────────────────────── */
+
+        #now-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 100;
+        justify-content: center;
+        align-items: flex-start;  
+        padding-top: 60px;        
+         }
+
+        #now-overlay.open {
+            display: flex;
+        }
+
+        #now-modal {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        /* Image frame — 400×400 on desktop, 85vw square on mobile */
+        #now-frame {
+            width: 400px;
+            height: 400px;
+            background: white;
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        #now-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        /* Counter: "1 / 12" bottom-right of frame */
+        #now-counter {
+            position: absolute;
+            bottom: 8px;
+            right: 10px;
+            font-family: "DM Mono", monospace;
+            font-size: 11px;
+            color: rgba(0, 0, 0, 0.35);
+            pointer-events: none;
+        }
+
+        /* Loading state inside frame */
+        #now-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "DM Mono", monospace;
+            font-size: 12px;
+            color: #999;
+            background: white;
+        }
+
+        #now-title {
+            font-family: "DM Mono", monospace;
+            font-weight: 300;
+            font-style: italic;
+            color: white;
+            font-size: 16px;
+            line-height: 18px;
+            width: 400px;
+            margin-top: 10px;
+        }
+
+        /* Caption — regular weight, muted */
+        #now-caption {
+            font-family: "DM Mono", monospace;
+            font-size: 16px;
+            line-height: 18px;
+            font-weight: 400;
+            color: #b2b2b2;
+            margin-top: 4px;
+            width: 400px;
+        }
+
+        /* Date — smaller, dimmer */
+        #now-date {
+            font-family: "DM Mono", monospace;
+            font-size: 12px;
+            line-height: 16px;
+            font-weight: 400;
+            color: #555555;
+            margin-top: 4px;
+            width: 400px;
+        }
+
+        /* Mobile */
+        @media only screen and (max-width: 767px) {
+            #now-frame  { width: 85vw; height: 85vw; }
+            #now-modal  { width: 85vw; }
+            #now-title,
+            #now-caption,
+            #now-date   { width: 85vw; }
+        }
+
+
+        body {
+          background-color: #D9E4EC;
+        }
+
+
+    </style>
+</head>
+
+<body>
+
+    <!-- Trigger Button: drop this link wherever suits your layout -->
+    <a href="#" id="now-trigger">Now</a>
+
+    <!-- Modal -->
+    <div id="now-overlay" role="dialog" aria-modal="true" aria-label="Now">
+        <div id="now-modal">
+            <div id="now-frame">
+                <div id="now-loading">loading...</div>
+                <span id="now-counter"></span>
+            </div>
+            <p id="now-title"></p>
+            <p id="now-caption"></p>
+            <p id="now-date"></p>
+        </div>
+    </div>
+
+    <script>
+
+        // ── Config ──────────────────────────────────────────────────────
+        const ARENA_CHANNEL = 'your-channel-slug'; // ← Enter your channel slug here (Slug is after the last "/" in your channel URL: https://www.are.na/username/slug)
+        // ────────────────────────────────────────────────────────────────
+
+        const ARENA_API = `https://api.are.na/v2/channels/${ARENA_CHANNEL}/contents?per=50&sort=position&direction=desc`;
+
+        let nowBlocks  = [];
+        let nowIndex   = 0;
+        let touchStartX = 0;
+        let loaded     = false;
+
+        const overlay   = document.getElementById('now-overlay');
+        const frame     = document.getElementById('now-frame');
+        const counter   = document.getElementById('now-counter');
+        const loadingEl = document.getElementById('now-loading');
+        const titleEl   = document.getElementById('now-title');
+        const captionEl = document.getElementById('now-caption');
+        const dateEl    = document.getElementById('now-date');
+
+        // Fetch all image blocks from the channel once on first open
+        async function fetchArena() {
+            try {
+                const res  = await fetch(ARENA_API);
+                const data = await res.json();
+                nowBlocks  = (data.contents || [])
+                    .filter(b => b.class === 'Image' && b.image)
+                    .map(b => ({
+                        url:     b.image.display.url || b.image.original.url,
+                        title:   b.title || '',
+                        caption: b.description || '',
+                        date:    b.created_at
+                                    ? new Date(b.created_at).toLocaleDateString('en-US', {
+                                        year: 'numeric', month: 'long', day: 'numeric'
+                                      })
+                                    : ''
+                    }));
+            } catch (e) {
+                loadingEl.textContent = 'error loading';
+            }
+        }
+
+        function showImage(index) {
+            const existing = frame.querySelector('img');
+            if (existing) existing.remove();
+            loadingEl.style.display = 'flex';
+            titleEl.textContent   = '';
+            captionEl.textContent = '';
+            dateEl.textContent    = '';
+
+            if (!nowBlocks.length) { loadingEl.textContent = 'config channel slug'; return; }
+
+            const block = nowBlocks[index];
+            const img   = new Image();
+            img.src     = block.url;
+
+            img.onload = () => {
+                loadingEl.style.display = 'none';
+                frame.appendChild(img);
+                counter.textContent   = `${index + 1} / ${nowBlocks.length}`;
+                titleEl.textContent   = block.title;
+                captionEl.textContent = block.caption;
+                dateEl.textContent    = block.date;
+            };
+
+            img.onerror = () => { loadingEl.textContent = 'error'; };
+        }
+
+        function navigate(dir) {
+            if (!nowBlocks.length) return;
+            nowIndex = (nowIndex + dir + nowBlocks.length) % nowBlocks.length;
+            showImage(nowIndex);
+        }
+
+        function closeModal() {
+            overlay.classList.remove('open');
+            document.body.style.overflow = '';
+            const img = frame.querySelector('img');
+            if (img) img.remove();
+            loadingEl.style.display  = 'flex';
+            loadingEl.textContent    = 'loading';
+            counter.textContent      = '';
+            titleEl.textContent      = '';
+            captionEl.textContent    = '';
+            dateEl.textContent       = '';
+        }
+
+        // Open
+        document.getElementById('now-trigger').addEventListener('click', async (e) => {
+            e.preventDefault();
+            overlay.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            if (!loaded) { await fetchArena(); loaded = true; }
+            nowIndex = 0;
+            showImage(nowIndex);
+        });
+
+        // Close on backdrop click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (!overlay.classList.contains('open')) return;
+            if (e.key === 'Escape')      closeModal();
+            if (e.key === 'ArrowRight')  navigate(1);
+            if (e.key === 'ArrowLeft')   navigate(-1);
+        });
+
+        // Touch swipe / tap to close
+        frame.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+        }, { passive: true });
+
+        frame.addEventListener('touchend', (e) => {
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            if (Math.abs(dx) > 40) navigate(dx < 0 ? 1 : -1);
+            else closeModal();
+        }, { passive: true });
+
+    </script>
+
+</body>
+</html>
